@@ -1,50 +1,49 @@
 pipeline {
-    agent any
-
     parameters {
         booleanParam(name: 'autoApprove', defaultValue: false, description: 'Automatically run apply after generating plan?')
         choice(name: 'action', choices: ['apply', 'destroy'], description: 'Select the action to perform')
-    }
-
+    } 
     environment {
         AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        AWS_DEFAULT_REGION    = 'ap-northeast-3'
+        AWS_DEFAULT_REGION = 'ap-south-1'
     }
 
+    agent any
+
     stages {
-        stage('Checkout') {
+        stage('Clone Repository') {
             steps {
-                git branch: 'main', url: 'https://github.com/Suchismita14/expt.git'
+                git url: 'https://github.com/Suchismita14/expt.git', branch: 'main'
             }
         }
-        stage('Terraform init') {
-            steps {
-                sh 'terraform init'
-            }
-        }
+
         stage('Plan') {
             steps {
-                sh 'terraform plan -out=tfplan'
-                sh 'terraform show -no-color tfplan > tfplan.txt'
+                sh 'pwd;cd terraform/ ; terraform init'
+                sh 'pwd;cd terraform/ ; terraform validate'
+                sh 'pwd;cd terraform/ ; terraform plan'
             }
         }
-        stage('Apply / Destroy') {
+
+        stage('Apply/Destroy') {
+            steps {
+                sh 'pwd;cd terraform/ ; terraform ${action} --auto-approve'
+            }
+        }
+
+        // New stage to run the Ansible playbook after Apply
+        stage('Run Ansible Playbook') {
+            when {
+                expression {
+                    return params.action == 'apply'  // Run only if the action is 'apply'
+                }
+            }
             steps {
                 script {
-                    if (params.action == 'apply') {
-                        if (!params.autoApprove) {
-                            def plan = readFile 'tfplan.txt'
-                            input message: "Do you want to apply the plan?",
-                            parameters: [text(name: 'Plan', description: 'Please review the plan', defaultValue: plan)]
-                        }
-
-                        sh 'terraform apply -input=false tfplan'
-                    } else if (params.action == 'destroy') {
-                        sh 'terraform destroy --auto-approve'
-                    } else {
-                        error "Invalid action selected. Please choose either 'apply' or 'destroy'."
-                    }
+                    // Ensure that the Ansible playbook is executed only if terraform apply was successful
+                    echo "Running Ansible Playbook..."
+                    sh 'ansible-playbook -i aws_ec2.yaml playbook.yml'  // Playbook name
                 }
             }
         }
