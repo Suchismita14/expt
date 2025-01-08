@@ -20,30 +20,30 @@ pipeline {
 
         stage('Plan') {
             steps {
-                sh 'pwd;cd terraform/ ; terraform init'
-                sh 'pwd;cd terraform/ ; terraform validate'
-                sh 'pwd;cd terraform/ ; terraform plan'
+                dir('terraform') {
+                    sh 'terraform init'
+                    sh 'terraform validate'
+                    sh 'terraform plan'
+                }
             }
         }
 
         stage('Apply/Destroy') {
             steps {
-                sh 'pwd;cd terraform/ ; terraform ${action} --auto-approve'
+                dir('terraform') {
+                    sh "terraform ${params.action} ${params.autoApprove ? '--auto-approve' : ''}"
+                }
             }
         }
 
-        // New stage to run the Ansible playbook after Apply
         stage('Run Ansible Playbook') {
             when {
-                expression {
-                    return params.action == 'apply'  // Run only if the action is 'apply'
-                }
+                expression { params.action == 'apply' }
             }
             steps {
                 script {
-                    // Ensure that the Ansible playbook is executed only if terraform apply was successful
                     echo "Running Ansible Playbook..."
-                    sh 'ansible-playbook -i aws_ec2.yaml playbook.yml'  // Playbook name
+                    sh 'ansible-playbook -i aws_ec2.yaml playbook.yml'
                 }
             }
         }
